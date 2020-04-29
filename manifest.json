@@ -1,0 +1,17 @@
+{
+  "name": "postMessage Mate",
+  "version": "1.0",
+  "description": "Monitor postMessage Communications Clearly",
+  "manifest_version": 2,
+  "minimum_chrome_version": "70.0",
+
+  "devtools_page": "./devtools.html",
+  
+  "content_scripts": [
+    {
+      "js": ["./mate.js"],
+      "matches": ["http://*/*", "https://*/*"],
+      "all_frames": true
+    }
+  ]
+}
