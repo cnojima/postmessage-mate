@@ -1,34 +1,14 @@
-// console.log('mate.js loaded')
-
 /*******************************************************************************
  **** content script (executed in active tabs)                              ****
  *******************************************************************************/
 
 
-
-// TODO: get this from sync.configuration
+// // TODO: get this from sync.configuration
 const DATA_DELIM = '--'; // seperator within a message
 const MULTI_PART_DELIM = '+-+-+'; // multi-part message
+const messages = [];
 let _custom_preprocess;
-
-
-
-/**
- * 
- * @param {any} msg 
- * @param {object} sender postMessage initiator
- * @param {?function} sendResponse callback on message received
- */
-chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {
-  // ack message
-  if(sender.ping) {
-    console.log("Got message from background page: " + msg);
-    sendResponse({pong: true});
-    return;
-  }
-  
-  // do something?
-});
+let extensionPort;
 
 
 /**
@@ -70,10 +50,6 @@ function parsePostMessage(msg) {
   return msg;
 }
 
-
-
-
-
 /**
  * Enable hooks for prep
  * @param {!any} msg postMessage message body
@@ -100,10 +76,11 @@ function processMessage(msg) {
 
 
 /**
- * Main message handler
+ * Main message handler in content tab (typically cross-domain postMessage comms)
  */
 window.addEventListener("message", function(event) {
-  console.groupCollapsed('%c%s', 'color: green;', `postMessage for [${document.title}]`)
+  // debug in console
+/*   console.groupCollapsed('%c%s', 'color: green;', `postMessage for [${document.title}]`)
     console.info(`[sender] ${event.origin}`);
     console.info(`[receiver] ${document.title}`);
 
@@ -115,20 +92,41 @@ window.addEventListener("message", function(event) {
       console.groupEnd();
     console.groupEnd();
   console.groupEnd();
-  
-  chrome.runtime.sendMessage({
-    type: 'pmm-msg',
-    from: event.source.window.document.title,
-    to: this.document.title,
-    data: parsePostMessage(event.data)
-  });
-});
+ */
+this.console.log(event);
+  const extMsg = {
+    data  : parsePostMessage(event.data),
+    event : event,
+    from  : event.origin,//event.source.window.document.title,
+    to    : document.title,// || event.target.location.host,
+    type  : 'pmm-msg',
+  };
 
-chrome.runtime.sendMessage({
-  type: 'pmm-msg',
-  from: 'mate.js',
-  to: 'devtools.js',
-  data: {
-    msg: 'are you listening?'
+  // if dev extension is open/focused AND comm port is open
+  if (extensionPort) {
+    extensionPort.postMessage(extMsg);
+  } else {
+    messages.push(extMsg);
   }
 });
+
+// await devtools extension to reach out and open port
+chrome.runtime.onConnect.addListener((port) => {
+  port.onMessage.addListener((msg) => {
+    if (msg.ping) {
+      console.info(`------------ got ping connect`)
+      port.postMessage({ pong: true});
+    }
+  });
+
+  // expose for downstream
+  extensionPort = port;
+  extensionPort.postMessage({ pmmCount: messages.length });
+
+  // consume queue
+  while (messages.length) {
+    const msg = messages.shift();
+    extensionPort.postMessage(msg);
+  }
+});
+

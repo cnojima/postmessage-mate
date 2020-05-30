@@ -9,21 +9,38 @@ chrome.devtools.panels.create("postMessage", undefined, "./devtools.html",
 
 const ul = document.querySelector('#messages');
 
-// listen for messages from content script
-chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
+
+function receiveMessage(message, sender, sendResponse) {
   messageLog.push(message);
 
   if (message.type === 'pmm-msg') {
     const li = document.createElement('li');
     li.innerText = `${message.from} => ${message.to}`;
     ul.appendChild(li);
+  } else if (message.pong) {
+    // console.log('got pong from content window', sender);
+  } else if (message.pmmCount) {
+    alert(`Got count of ${message.pmmCount}`);
   }
 
   if (sendResponse) {
     sendResponse({ success: true });
   }
-});
+}
 
+// // establish long-lived connection to active-tab
+// // find focus tab
+// const contentTabs = chrome.tabs.connect({ name: 'pmm' });
+
+function connectActiveTab() {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs) {
+      const port = chrome.tabs.connect(tabs[0].id);
+      port.postMessage({ ping: true });
+      port.onMessage.addListener(receiveMessage);
+    }
+  });
+}
 
 /**
  * Fault-tolerant message back to devtool panel
@@ -33,23 +50,26 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
  */
 function sendMessage(message, callback) {
   // find focus tab
-  chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+  contentTabs.query({ active: true, currentWindow: true }, function(tabs) {
     // send ping message, send real message on pong ack
-    chrome.tabs.sendMessage(tabId, { ping: true }, function(response) {
+    contentTabs.sendMessage(tabId, { ping: true }, function(response) {
       if(response && response.pong) {
         // sending real message
-        chrome.tabs.sendMessage(tabId, message, callback);
+        contentTabs.sendMessage(tabId, message, callback);
       } else {
         // inject content script for postMessage mate
-        chrome.tabs.executeScript(tabId, { file: "mate.js" }, function() {
+        contentTabs.executeScript(tabId, { file: "content-script.js" }, function() {
           if(chrome.runtime.lastError) {
             console.error(chrome.runtime.lastError);
             throw Error("Unable to inject script into tab " + tabId);
           }
           // send real message
-          chrome.tabs.sendMessage(tabId, message, callback);
+          contentTabs.sendMessage(tabId, message, callback);
         });
       }
     });
   });
 }
+
+
+connectActiveTab();
